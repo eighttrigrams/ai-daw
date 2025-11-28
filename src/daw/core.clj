@@ -5,11 +5,13 @@
 (def bpm 120)
 (def frames-per-16th (int (/ (* sample-rate 60) bpm 4)))
 
+(def samples-per-bar (* frames-per-16th 16 2))
+
 (def pattern
-  [{:sample :kick  :steps [1 0 0 0 1 0 0 0 1 0 0 0 1 0 0 0]}
-   {:sample :snare :steps [0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0]}
-   {:sample :hh    :steps [1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0]}
-   {:sample :clap  :steps [0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1]}])
+  [{:sample :kick  :steps [127 0 0 0 127 0 0 0 127 0 0 0 127 0 0 0]}
+   {:sample :snare :steps [0 0 0 0 127 0 0 0 0 0 0 0 127 0 0 0]}
+   {:sample :hh    :steps [127 0 80 0 127 0 80 0 127 0 80 0 127 0 80 0]}
+   {:sample :reso  :steps [127 0 20 0 127 0 0 0 0 0 0 0 0 0 0 0]}])
 
 (def output-format (AudioFormat. sample-rate 16 2 true false))
 
@@ -51,11 +53,18 @@
         (aset out (+ (* 2 i) 1) (unchecked-byte (bit-shift-right v 8)))))
     out))
 
-(defn mix-sample [^ints buffer ^ints sample]
-  (let [len (min (alength sample) (alength buffer))]
-    (dotimes [i len]
-      (let [mixed (+ (aget buffer i) (aget sample i))]
-        (aset buffer i (int (max -32768 (min 32767 mixed))))))))
+(defn mix-sample
+  ([^ints buffer ^ints sample velocity]
+   (mix-sample buffer sample velocity 0))
+  ([^ints buffer ^ints sample velocity offset]
+   (let [len (min (- (alength sample) offset) (alength buffer))
+         gain (/ velocity 127.0)]
+     (when (pos? len)
+       (dotimes [i len]
+         (let [scaled (int (* (aget sample (+ offset i)) gain))
+               mixed (+ (aget buffer i) scaled)]
+           (aset buffer i (int (max -32768 (min 32767 mixed))))))
+       (+ offset len)))))
 
 (defn -main []
   (let [info (DataLine$Info. SourceDataLine output-format)
@@ -63,17 +72,29 @@
         samples {:kick  (sample->stereo-ints (load-sample "samples/BD Kick 006 HC.wav"))
                  :snare (sample->stereo-ints (load-sample "samples/SN Sd 4Bit Vinyl St GB.wav"))
                  :hh    (sample->stereo-ints (load-sample "samples/HH 60S Stomp2 GB.wav"))
-                 :clap  (sample->stereo-ints (load-sample "samples/CL Claptrap 05 Mpc60 St GB.wav"))}
+                 :reso  (sample->stereo-ints (load-sample "samples/reso.wav"))}
         samples-per-16th (* frames-per-16th 2)]
     (.open ^SourceDataLine line output-format)
     (.start ^SourceDataLine line)
     (println "Playing 4/4 (Ctrl+C to stop)")
-    (loop [step 0]
+    (loop [step 0
+           voices []]
       (let [buffer (int-array samples-per-16th)
-            idx (mod step 16)]
-        (doseq [{:keys [sample steps]} pattern]
-          (when (= 1 (nth steps idx))
-            (mix-sample buffer (get samples sample))))
+            idx (mod step 16)
+            new-voices (doall
+                        (for [{:keys [sample steps]} pattern
+                              :let [velocity (nth steps idx)]
+                              :when (pos? velocity)]
+                          {:sample sample :velocity velocity :offset 0}))
+            triggered-samples (set (map :sample new-voices))
+            continuing-voices (remove #(triggered-samples (:sample %)) voices)
+            all-voices (concat continuing-voices new-voices)
+            remaining (doall
+                       (for [{:keys [sample velocity offset]} all-voices
+                             :let [new-offset (mix-sample buffer (get samples sample) velocity offset)]
+                             :when (and new-offset
+                                        (< new-offset (alength (get samples sample))))]
+                         {:sample sample :velocity velocity :offset new-offset}))]
         (let [out (ints->bytes buffer)]
-          (.write ^SourceDataLine line out 0 (alength out))))
-      (recur (inc step)))))
+          (.write ^SourceDataLine line out 0 (alength out)))
+        (recur (inc step) remaining)))))
