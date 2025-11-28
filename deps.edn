@@ -1,2 +1,6 @@
 {:paths ["src"]
- :deps {}}
+ :deps {}
+ :aliases
+ {:play {:main-opts ["-m" "daw.core"]}
+  :export {:exec-fn daw.core/export-wav
+           :exec-args {:filename "output.wav"}}}}
