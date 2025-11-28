@@ -3,10 +3,14 @@
            [java.io ByteArrayInputStream File]))
 
 (def sample-rate 44100.0)
-(def bpm 120)
-(def frames-per-16th (int (/ (* sample-rate 60) bpm 4)))
 
-(def mixer [127 127 50 110])
+(defonce state (atom {:master 127
+                       :mixer [127 127 50 110]
+                       :bpm 120
+                       :playing true}))
+
+(defn frames-per-16th []
+  (int (/ (* sample-rate 60) (:bpm @state) 4)))
 
 (def pattern
   [{:sample :kick  :steps [127 0 0 0 127 0 0 0 127 0 0 0 127 0 0 0]}
@@ -68,7 +72,7 @@
        (+ offset len)))))
 
 (defn render-steps [samples n-steps]
-  (let [samples-per-16th (* frames-per-16th 2)]
+  (let [samples-per-16th (* (frames-per-16th) 2)]
     (loop [step 0
            voices []
            output []]
@@ -80,9 +84,10 @@
               new-voices (doall
                           (for [[ch {:keys [sample steps]}] (map-indexed vector pattern)
                                 :let [velocity (nth steps idx)
-                                      channel-vol (nth mixer ch)]
+                                      channel-vol (nth (:mixer @state) ch)
+                                      master-vol (:master @state)]
                                 :when (pos? velocity)]
-                            {:sample sample :velocity (* (/ velocity 127.0) channel-vol) :offset 0}))
+                            {:sample sample :velocity (* (/ velocity 127.0) channel-vol (/ master-vol 127.0)) :offset 0}))
               triggered-samples (set (map :sample new-voices))
               continuing-voices (remove #(triggered-samples (:sample %)) voices)
               all-voices (concat continuing-voices new-voices)
@@ -108,36 +113,46 @@
     (AudioSystem/write stream AudioFileFormat$Type/WAVE (File. filename))
     (println (str "Exported " filename))))
 
+(defn start-server []
+  (require 'daw.server)
+  (future ((resolve 'daw.server/start))))
+
 (defn -main []
+  (start-server)
   (let [info (DataLine$Info. SourceDataLine output-format)
         line (AudioSystem/getLine info)
         samples {:kick  (sample->stereo-ints (load-sample "samples/BD Kick 006 HC.wav"))
                  :snare (sample->stereo-ints (load-sample "samples/SN Sd 4Bit Vinyl St GB.wav"))
                  :hh    (sample->stereo-ints (load-sample "samples/HH 60S Stomp2 GB.wav"))
-                 :reso  (sample->stereo-ints (load-sample "samples/reso.wav"))}
-        samples-per-16th (* frames-per-16th 2)]
+                 :reso  (sample->stereo-ints (load-sample "samples/reso.wav"))}]
     (.open ^SourceDataLine line output-format)
     (.start ^SourceDataLine line)
-    (println "Playing 4/4 (Ctrl+C to stop)")
+    (println "Playing 4/4 (Ctrl+C to stop)\nMixer UI: http://localhost:3015")
     (loop [step 0
            voices []]
-      (let [buffer (int-array samples-per-16th)
-            idx (mod step 16)
-            new-voices (doall
-                        (for [[ch {:keys [sample steps]}] (map-indexed vector pattern)
-                              :let [velocity (nth steps idx)
-                                    channel-vol (nth mixer ch)]
-                              :when (pos? velocity)]
-                          {:sample sample :velocity (* (/ velocity 127.0) channel-vol) :offset 0}))
-            triggered-samples (set (map :sample new-voices))
-            continuing-voices (remove #(triggered-samples (:sample %)) voices)
-            all-voices (concat continuing-voices new-voices)
-            remaining (doall
-                       (for [{:keys [sample velocity offset]} all-voices
-                             :let [new-offset (mix-sample buffer (get samples sample) velocity offset)]
-                             :when (and new-offset
-                                        (< new-offset (alength (get samples sample))))]
-                         {:sample sample :velocity velocity :offset new-offset}))]
-        (let [out (ints->bytes buffer)]
-          (.write ^SourceDataLine line out 0 (alength out)))
-        (recur (inc step) remaining)))))
+      (let [samples-per-16th (* (frames-per-16th) 2)]
+        (if (:playing @state)
+          (let [buffer (int-array samples-per-16th)
+                idx (mod step 16)
+                new-voices (doall
+                            (for [[ch {:keys [sample steps]}] (map-indexed vector pattern)
+                                  :let [velocity (nth steps idx)
+                                        channel-vol (nth (:mixer @state) ch)
+                                        master-vol (:master @state)]
+                                  :when (pos? velocity)]
+                              {:sample sample :velocity (* (/ velocity 127.0) channel-vol (/ master-vol 127.0)) :offset 0}))
+                triggered-samples (set (map :sample new-voices))
+                continuing-voices (remove #(triggered-samples (:sample %)) voices)
+                all-voices (concat continuing-voices new-voices)
+                remaining (doall
+                           (for [{:keys [sample velocity offset]} all-voices
+                                 :let [new-offset (mix-sample buffer (get samples sample) velocity offset)]
+                                 :when (and new-offset
+                                            (< new-offset (alength (get samples sample))))]
+                             {:sample sample :velocity velocity :offset new-offset}))]
+            (let [out (ints->bytes buffer)]
+              (.write ^SourceDataLine line out 0 (alength out)))
+            (recur (inc step) remaining))
+          (do
+            (Thread/sleep 50)
+            (recur 0 [])))))))

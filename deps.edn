@@ -1,6 +1,10 @@
-{:paths ["src"]
- :deps {}
+{:paths ["src/clj" "resources"]
+ :deps {ring/ring-core {:mvn/version "1.11.0"}
+        ring/ring-jetty-adapter {:mvn/version "1.11.0"}
+        ring/ring-json {:mvn/version "0.5.1"}
+        compojure/compojure {:mvn/version "1.7.1"}}
  :aliases
  {:play {:main-opts ["-m" "daw.core"]}
   :export {:exec-fn daw.core/export-wav
-           :exec-args {:filename "output.wav"}}}}
+           :exec-args {:filename "output.wav"}}
+  :server {:main-opts ["-m" "daw.server"]}}}
