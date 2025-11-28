@@ -3,7 +3,13 @@
 
 (def sample-rate 44100.0)
 (def bpm 120)
-(def frames-per-8th (int (/ (* sample-rate 60) bpm 2)))
+(def frames-per-16th (int (/ (* sample-rate 60) bpm 4)))
+
+(def pattern
+  [{:sample :kick  :steps [1 0 0 0 1 0 0 0 1 0 0 0 1 0 0 0]}
+   {:sample :snare :steps [0 0 0 0 1 0 0 0 0 0 0 0 1 0 0 0]}
+   {:sample :hh    :steps [1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0]}
+   {:sample :clap  :steps [0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1]}])
 
 (def output-format (AudioFormat. sample-rate 16 2 true false))
 
@@ -54,20 +60,20 @@
 (defn -main []
   (let [info (DataLine$Info. SourceDataLine output-format)
         line (AudioSystem/getLine info)
-        kick (sample->stereo-ints (load-sample "samples/BD Kick 006 HC.wav"))
-        snare (sample->stereo-ints (load-sample "samples/SN Sd 4Bit Vinyl St GB.wav"))
-        hh (sample->stereo-ints (load-sample "samples/HH 60S Stomp2 GB.wav"))
-        samples-per-8th (* frames-per-8th 2)]
+        samples {:kick  (sample->stereo-ints (load-sample "samples/BD Kick 006 HC.wav"))
+                 :snare (sample->stereo-ints (load-sample "samples/SN Sd 4Bit Vinyl St GB.wav"))
+                 :hh    (sample->stereo-ints (load-sample "samples/HH 60S Stomp2 GB.wav"))
+                 :clap  (sample->stereo-ints (load-sample "samples/CL Claptrap 05 Mpc60 St GB.wav"))}
+        samples-per-16th (* frames-per-16th 2)]
     (.open ^SourceDataLine line output-format)
     (.start ^SourceDataLine line)
     (println "Playing 4/4 (Ctrl+C to stop)")
-    (loop [beat 0]
-      (let [buffer (int-array samples-per-8th)]
-        (mix-sample buffer hh)
-        (case (mod beat 4)
-          0 (mix-sample buffer kick)
-          2 (mix-sample buffer snare)
-          nil)
+    (loop [step 0]
+      (let [buffer (int-array samples-per-16th)
+            idx (mod step 16)]
+        (doseq [{:keys [sample steps]} pattern]
+          (when (= 1 (nth steps idx))
+            (mix-sample buffer (get samples sample))))
         (let [out (ints->bytes buffer)]
           (.write ^SourceDataLine line out 0 (alength out))))
-      (recur (inc beat)))))
+      (recur (inc step)))))
