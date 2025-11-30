@@ -7,7 +7,8 @@
                         :mixer [127 127 50 110 127 127 127 127]
                         :bpm 120
                         :playing true
-                        :step 0}))
+                        :step 0
+                        :next-bar nil}))
 
 (defonce active-tab (r/atom :sequencer))
 
@@ -105,6 +106,13 @@
                  (do (start-sync) (start-playhead-loop))
                  (do (stop-sync) (stop-playhead-loop) (swap! playhead assoc :step 0)))))))
 
+(defn schedule-bar [bar-idx]
+  (-> (js/fetch "/api/next-bar"
+                #js {:method "PUT"
+                     :headers #js {"Content-Type" "application/json"}
+                     :body (js/JSON.stringify #js {:value bar-idx})})
+      (.then #(swap! state assoc :next-bar bar-idx))))
+
 (defn slider [{:keys [label value on-change]}]
   [:div.channel
    [:label label]
@@ -165,24 +173,38 @@
       (reset! selected-bars
               (vec (sort (map #(mod (inc %) len) current)))))))
 
-(defn bar-selector []
+(defn play-bar []
   (let [current-step (:step @playhead)
-        current-bar (quot current-step 16)]
-    [:div.bar-selector-container
-     [:div.bar-selector
+        current-bar (quot current-step 16)
+        next-bar (:next-bar @state)]
+    [:div.play-bar-container
+     [:div.play-bar
       (doall
        (for [bar-idx (range max-sequence-length)
              :let [available? (< bar-idx (sequence-length))
-                   selected? (some #{bar-idx} @selected-bars)
-                   playing? (= bar-idx current-bar)]]
+                   playing? (= bar-idx current-bar)
+                   scheduled? (= bar-idx next-bar)]]
          ^{:key bar-idx}
-         [:div.bar-cell {:class [(when selected? "selected")
-                                 (when available? "available")
-                                 (when playing? "playing")]
-                         :on-click #(when available? (toggle-bar bar-idx))}]))]
-     [:div.bar-nav
-      [:div.bar-nav-btn {:on-click shift-bars-left} "◀"]
-      [:div.bar-nav-btn {:on-click shift-bars-right} "▶"]]]))
+         [:div.play-cell {:class [(when available? "available")
+                                  (when playing? "playing")
+                                  (when scheduled? "scheduled")]
+                          :on-click #(when available? (schedule-bar bar-idx))}
+          (when available? "▶")]))]]))
+
+(defn bar-selector []
+  [:div.bar-selector-container
+   [:div.bar-selector
+    (doall
+     (for [bar-idx (range max-sequence-length)
+           :let [available? (< bar-idx (sequence-length))
+                 selected? (some #{bar-idx} @selected-bars)]]
+       ^{:key bar-idx}
+       [:div.bar-cell {:class [(when selected? "selected")
+                               (when available? "available")]
+                       :on-click #(when available? (toggle-bar bar-idx))}]))]
+   [:div.bar-nav
+    [:div.bar-nav-btn {:on-click shift-bars-left} "◀"]
+    [:div.bar-nav-btn {:on-click shift-bars-right} "▶"]]])
 
 (defn drum-grid []
   (let [current-step (:step @playhead)
@@ -197,6 +219,7 @@
         cell-width 18
         playhead-x (+ 78 (* playhead-grid-bar (+ (* steps-per-bar cell-width) bar-gap)) (* playhead-col cell-width))]
     [:div
+     [play-bar]
      [bar-selector]
      [:div.grid-container
       [:div.grid

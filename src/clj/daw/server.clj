@@ -37,6 +37,9 @@
   (PUT "/api/playing" {body :body}
     (swap! core/state assoc :playing (:value body))
     (response @core/state))
+  (PUT "/api/next-bar" {body :body}
+    (swap! core/state assoc :next-bar (:value body))
+    (response @core/state))
   (GET "/api/export" []
     (let [export-dir (File. ".exports")
           _ (when-not (.exists export-dir) (.mkdirs export-dir))

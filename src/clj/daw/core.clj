@@ -9,7 +9,8 @@
                        :mixer [127 127 50 110 127 127 127 127]
                        :bpm 120
                        :playing true
-                       :step 0}))
+                       :step 0
+                       :next-bar nil}))
 
 (defn frames-per-16th []
   (int (/ (* sample-rate 60) (:bpm @state) 4)))
@@ -148,9 +149,15 @@
         (if (:playing @state)
           (let [buffer (int-array samples-per-16th)
                 looped-step (mod step total-steps)
-                bar-idx (quot looped-step 16)
-                step-idx (mod looped-step 16)
-                _ (swap! state assoc :step looped-step)
+                at-bar-boundary? (zero? (mod looped-step 16))
+                next-bar (:next-bar @state)
+                actual-step (if (and next-bar at-bar-boundary?)
+                              (do (swap! state assoc :next-bar nil)
+                                  (* next-bar 16))
+                              looped-step)
+                bar-idx (quot actual-step 16)
+                step-idx (mod actual-step 16)
+                _ (swap! state assoc :step actual-step)
                 new-voices (doall
                             (for [[ch {:keys [sample bars]}] (map-indexed vector @sequence')
                                   :let [bar-data (get bars bar-idx)
@@ -170,7 +177,7 @@
                              {:sample sample :velocity velocity :offset new-offset}))]
             (let [out (ints->bytes buffer)]
               (.write ^SourceDataLine line out 0 (alength out)))
-            (recur (inc step) remaining))
+            (recur (inc actual-step) remaining))
           (do
             (Thread/sleep 50)
             (recur 0 [])))))))
