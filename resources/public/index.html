@@ -81,11 +81,36 @@
       font-family: monospace;
     }
 
+    .bar-selector-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      margin-left: 78px;
+    }
     .bar-selector {
       display: flex;
       gap: 4px;
-      margin-bottom: 16px;
-      margin-left: 78px;
+    }
+    .bar-nav {
+      display: flex;
+      gap: 4px;
+    }
+    .bar-nav-btn {
+      width: 14px;
+      height: 14px;
+      background: #333;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: #888;
+      cursor: pointer;
+    }
+    .bar-nav-btn:hover {
+      background: #444;
+      color: #eee;
     }
     .bar-cell {
       width: 14px;
@@ -105,6 +130,13 @@
     .bar-cell.selected {
       opacity: 1;
       box-shadow: 0 0 6px #e94560;
+    }
+    .bar-cell.playing {
+      animation: blink 0.5s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
     .grid-container {

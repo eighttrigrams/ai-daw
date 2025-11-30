@@ -120,7 +120,7 @@
 
 (defn export-wav [{:keys [filename] :or {filename "output.wav"}}]
   (let [samples (load-track-samples)
-        n-steps (* 8 16)
+        n-steps (* (sequence-length-bars) 16)
         audio-bytes (render-steps samples n-steps)
         stream (javax.sound.sampled.AudioInputStream.
                 (ByteArrayInputStream. audio-bytes)

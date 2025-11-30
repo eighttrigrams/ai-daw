@@ -44,7 +44,7 @@
           filename (str "export-" timestamp ".wav")
           file (File. export-dir filename)
           samples (core/load-track-samples)
-          n-steps (* 8 16)
+          n-steps (* (core/sequence-length-bars) 16)
           audio-bytes (core/render-steps samples n-steps)
           stream (javax.sound.sampled.AudioInputStream.
                   (java.io.ByteArrayInputStream. audio-bytes)

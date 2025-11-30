@@ -151,16 +151,38 @@
       (when (< (count current) 4)
         (reset! selected-bars (vec (sort (conj current bar-idx))))))))
 
+(defn shift-bars-left []
+  (let [len (sequence-length)
+        current @selected-bars]
+    (when (pos? len)
+      (reset! selected-bars
+              (vec (sort (map #(mod (dec %) len) current)))))))
+
+(defn shift-bars-right []
+  (let [len (sequence-length)
+        current @selected-bars]
+    (when (pos? len)
+      (reset! selected-bars
+              (vec (sort (map #(mod (inc %) len) current)))))))
+
 (defn bar-selector []
-  [:div.bar-selector
-   (doall
-    (for [bar-idx (range max-sequence-length)
-          :let [available? (< bar-idx (sequence-length))
-                selected? (some #{bar-idx} @selected-bars)]]
-      ^{:key bar-idx}
-      [:div.bar-cell {:class [(when selected? "selected")
-                              (when available? "available")]
-                      :on-click #(when available? (toggle-bar bar-idx))}]))])
+  (let [current-step (:step @playhead)
+        current-bar (quot current-step 16)]
+    [:div.bar-selector-container
+     [:div.bar-selector
+      (doall
+       (for [bar-idx (range max-sequence-length)
+             :let [available? (< bar-idx (sequence-length))
+                   selected? (some #{bar-idx} @selected-bars)
+                   playing? (= bar-idx current-bar)]]
+         ^{:key bar-idx}
+         [:div.bar-cell {:class [(when selected? "selected")
+                                 (when available? "available")
+                                 (when playing? "playing")]
+                         :on-click #(when available? (toggle-bar bar-idx))}]))]
+     [:div.bar-nav
+      [:div.bar-nav-btn {:on-click shift-bars-left} "◀"]
+      [:div.bar-nav-btn {:on-click shift-bars-right} "▶"]]]))
 
 (defn drum-grid []
   (let [current-step (:step @playhead)
